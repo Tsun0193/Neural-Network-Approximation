@@ -5,7 +5,9 @@ from IPython import get_ipython
 from scipy.stats import pearsonr
 
 def plot_results_1d(X_train, y_train, X_test, y_test, y_pred, 
-                    history, title, plot_size=(12, 5),
+                    history, title,
+                    highlight_points=[],
+                    plot_size=(12, 5),
                     save_path: str = None):
     """
     Plot training history and function approximation results for 1D data.
@@ -43,6 +45,10 @@ def plot_results_1d(X_train, y_train, X_test, y_test, y_pred,
     plt.xlabel('X')
     plt.ylabel('f(X)')
     plt.legend()
+
+    # Highlight points
+    for point in highlight_points:
+        plt.axvline(x=point, color='k', linestyle='--', alpha=0.5)
     
     plt.tight_layout()
     if save_path:
