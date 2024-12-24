@@ -1,6 +1,6 @@
 import numpy as np
 import inspect
-from typing import Callable, Tuple
+from typing import Callable, Tuple, Literal
 
 def get_derivative(f: Callable, epsilon: float = 1e-6) -> Callable:
     """
@@ -96,3 +96,38 @@ def compute_approximation_error(f: Callable,
     }
 
     return res
+
+def constructor(f: Callable,
+                interval: Tuple,
+                type: Literal["upper", "lower"]) -> Callable:
+    """
+    Construct a function which has a constant second-order derivative:
+    f''(x) = max(f''(a), f''(b)) for x in [a, b] (upper bound) or
+    f''(x) = min(f''(a), f''(b)) for x in [a, b] (lower bound).
+
+    Parameters:
+    - f: The function to approximate.
+    - interval: Tuple (a, b), the interval over which to approximate.
+    - type: The type of approximation to perform.
+
+    Note: The function is just for experimentation purposes and may not be useful in practice.
+    """
+
+    a, b = interval
+
+    def second_df(func: Callable,
+                  x: float,
+                  epsilon: float = 1e-6) -> float:
+        return (func(x + epsilon) - 2 * func(x) + func(x - epsilon)) / epsilon ** 2
+    
+    fpp_a = second_df(f, a)
+    fpp_b = second_df(f, b)
+
+    if type == "upper":
+        fpp = max(fpp_a, fpp_b)
+    elif type == "lower":
+        fpp = min(fpp_a, fpp_b)
+    else:
+        raise ValueError("Invalid type. Must be 'upper' or 'lower'.")
+    
+    return lambda x: fpp * (x ** 2) / 2
