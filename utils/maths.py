@@ -131,3 +131,21 @@ def constructor(f: Callable,
         raise ValueError("Invalid type. Must be 'upper' or 'lower'.")
     
     return lambda x: fpp * (x ** 2) / 2
+
+
+def get_slope_by_2_points(p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
+    """
+    Compute the slope of a line passing through two points.
+
+    Parameters:
+    - p1: The first point (x, y).
+    - p2: The second point (x, y).
+
+    Returns:
+    - The slope of the line.
+    """
+
+    x1, y1 = p1
+    x2, y2 = p2
+
+    return (y2 - y1) / (x2 - x1)
