@@ -1,6 +1,7 @@
 import numpy as np
 import inspect
 from typing import Callable, Tuple, Literal, List
+from scipy.optimize import minimize_scalar
 
 def get_derivative(f: Callable, epsilon: float = 1e-6) -> Callable:
     """
@@ -150,71 +151,33 @@ def get_slope_by_2_points(p1: Tuple[float, float], p2: Tuple[float, float]) -> f
 
     return (y2 - y1) / (x2 - x1)
 
-def optimal_approx(
-    n: int,
-    f: Callable,
-    a: float,
-    b: float,
-    stepsize: float
-) -> Tuple[List[Tuple[float, float]], List[float]]:
+
+def max_fx(f: Callable, interval: Tuple[float, float]) -> float:
     """
-    Compute the optimal approximation of a convex function.
+    Compute the maximum value of a function over an interval.
 
     Parameters:
-    - n: The number of points to use.
-    - f: The function to approximate.
-    - a: The start of the interval.
-    - b: The end of the interval.
-    - stepsize: The stepsize to use for the approximation.
+    - f: The function to maximize.
+    - interval: Tuple (a, b), the interval over which to maximize.
 
     Returns:
-    - Tuple of points and the optimal approximation error.
+    - The maximum value of the function.
     """
+    neg_f = lambda x: -f(x)
+    result = minimize_scalar(neg_f, bounds=interval, method='bounded')
+    return float(-result.fun)
 
-    # Initialize intervals equally distributed
-    intervals = [(a + i * (b - a) / n, a + (i + 1) * (b - a) / n) for i in range(n)]
 
-    def compute_segment_error(segment: Tuple[float, float]) -> float:
-        """Compute error for a single segment using the custom utility."""
-        result = compute_approximation_error(f, segment)
-        return result["error"]
+def min_fx(f: Callable, interval: Tuple[float, float]) -> float:
+    """
+    Compute the minimum value of a function over an interval.
 
-    # Compute initial errors
-    errors = [compute_segment_error(interval) for interval in intervals]
+    Parameters:
+    - f: The function to minimize.
+    - interval: Tuple (a, b), the interval over which to minimize.
 
-    while True:
-        max_error = max(errors)
-        min_error = min(errors)
-        prev_error_diff = max_error - min_error
-
-        for i in range(1, n):
-            left_error = errors[i - 1]
-            right_error = errors[i]
-            x_common = intervals[i][0]  # common endpoint
-
-            if left_error > right_error:
-                while left_error > right_error:
-                    x_common -= stepsize
-                    intervals[i - 1] = (intervals[i - 1][0], x_common)
-                    intervals[i] = (x_common, intervals[i][1])
-                    left_error = compute_segment_error(intervals[i - 1])
-                    right_error = compute_segment_error(intervals[i])
-            elif left_error < right_error:
-                while left_error < right_error:
-                    x_common += stepsize
-                    intervals[i - 1] = (intervals[i - 1][0], x_common)
-                    intervals[i] = (x_common, intervals[i][1])
-                    left_error = compute_segment_error(intervals[i - 1])
-                    right_error = compute_segment_error(intervals[i])
-
-        # Recompute errors
-        errors = [compute_segment_error(interval) for interval in intervals]
-        max_error = max(errors)
-        min_error = min(errors)
-        current_error_diff = max_error - min_error
-
-        # Check convergence
-        if prev_error_diff <= current_error_diff:
-            break
-
-    return intervals, errors
+    Returns:
+    - The minimum value of the function.
+    """
+    result = minimize_scalar(f, bounds=interval, method='bounded')
+    return float(result.fun)
