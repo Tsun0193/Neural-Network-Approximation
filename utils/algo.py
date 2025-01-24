@@ -36,7 +36,6 @@ def optimal_approx(
     rounds = 0
 
     while True:
-        rounds += 1
         max_error = max(errors)
         min_error = min(errors)
         prev_error_diff = max_error - min_error
@@ -48,6 +47,7 @@ def optimal_approx(
 
             if left_error > right_error:
                 while left_error > right_error:
+                    rounds += 1
                     x_common -= stepsize
                     intervals[i - 1] = (intervals[i - 1][0], x_common)
                     intervals[i] = (x_common, intervals[i][1])
@@ -55,6 +55,7 @@ def optimal_approx(
                     right_error = compute_segment_error(intervals[i])
             elif left_error < right_error:
                 while left_error < right_error:
+                    rounds += 1
                     x_common += stepsize
                     intervals[i - 1] = (intervals[i - 1][0], x_common)
                     intervals[i] = (x_common, intervals[i][1])
@@ -71,4 +72,4 @@ def optimal_approx(
         if prev_error_diff <= current_error_diff:
             break
 
-    return intervals, errors
+    return intervals, errors, rounds
