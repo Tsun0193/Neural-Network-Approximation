@@ -43,7 +43,7 @@ class AxonNetwork(nn.Module):
             
             # if there is no given basis -> initialize randomly
             bs = torch.cat([torch.ones((x.shape[0],1)), x], dim=1)
-            bs, r = torch.qr(bs)
+            bs, r = torch.linalg.qr(bs, mode = 'reduced')
             self.r = torch.inverse(r).to(device)
             
             for i in range(num_basis_fun-x.shape[1]-1):

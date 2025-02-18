@@ -21,10 +21,13 @@ parser.add_argument('--eps', type=float, help='epsilon for equation -eps^2 u''+u
 
 
 # solution for -eps^2 u''+u = 1, u(0)=u(1)=0
-def u(x, eps=0.05):
-    a = (1-np.exp(1/eps))/(np.exp(2/eps)-1)
-    b = (np.exp(1/eps)-np.exp(2/eps))/(np.exp(2/eps)-1)
-    return a*np.exp(x/eps)+b*np.exp(-x/eps) + 1
+def u(x, eps: float = 0.05):
+	if eps is None:
+		raise ValueError('eps is not defined')
+	
+	a = (1-np.exp(1/eps))/(np.exp(2/eps)-1)
+	b = (np.exp(1/eps)-np.exp(2/eps))/(np.exp(2/eps)-1)
+	return a*np.exp(x/eps)+b*np.exp(-x/eps) + 1
 
 def f_2d(x):
     return np.sqrt(xs[:,0]**2+xs[:,1]**2).astype(np.float64)
