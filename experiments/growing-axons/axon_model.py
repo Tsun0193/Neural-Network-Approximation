@@ -1,148 +1,205 @@
-import torch
-import torch.nn.functional as F
-from torch import nn
 import numpy as np
-from tqdm import tqdm
+import nevergrad as ng
 
-class AxonNetwork(nn.Module):
-    """Neural network for function approximation using orthogonal basis functions.
-    
-    Attributes:
-        qr_inverse (torch.Tensor): Inverse R matrix from QR decomposition
-        ortho_coeffs (list): Coefficients for basis orthogonalization
-        norm_factors (list): Normalization factors for basis functions
-        coeff (torch.Tensor): Final projection coefficients
-        device (torch.device): Computation device
+
+def relu(x):
+    """Rectified Linear Unit (ReLU) activation function."""
+    return np.maximum(0, x)
+
+
+def repu(x, q):
+    """Rectified Power Unit (RePU) activation function with exponent q."""
+    return np.where(x > 0, np.power(x, q), 0)
+
+
+def objective_function(w, x, residuals, nonlinearity):
     """
+    Objective function for the Axon algorithm.
 
-    def __init__(self, x, y, basis_coef_init=None, r=None, orth_coefs=None, 
-                 norms=None, bas_np=None, num_basis=3, device='cpu'):
-        super().__init__()
-        self.device = device
-        self.ortho_coeffs = []
-        self.norm_factors = []
-        self.layers = nn.ModuleList()
+    Args:
+        w: Weight vector.
+        x: Input data matrix.
+        residuals: Residuals from the current approximation.
+        nonlinearity: Activation function to apply.
 
-        if None in [basis_coef_init, r, orth_coefs, norms, bas_np]:
-            self._initialize_from_scratch(x, y, num_basis)
-        else:
-            self._initialize_precomputed(x, y, basis_coef_init, r, 
-                                       orth_coefs, norms, bas_np)
-
-    def forward(self, x):
-        basis = self._compute_basis(x)
-        return basis @ self.coeff
-
-    def _initialize_from_scratch(self, x, y, num_basis):
-        """Initialize network with QR decomposition and random basis expansion."""
-        # QR decomposition of [1|x]
-        ones = torch.ones((x.shape[0], 1), device=x.device)
-        design = torch.cat([ones, x], 1)
-        q, r = torch.linalg.qr(design)
-        self.qr_inverse = torch.inverse(r).to(self.device)
-        
-        # Create basis expansion layers
-        input_dim = x.shape[1] + 1
-        for i in range(num_basis - input_dim):
-            self.layers.append(nn.Linear(input_dim + i, 1, bias=False))
-            
-        # Build orthogonal basis
-        basis = self._build_initial_basis(q.to(self.device))
-        self.coeff = (basis.T @ y.to(self.device)).detach()
-
-    def _initialize_precomputed(self, x, y, weights, r, ortho, norms, basis_np):
-        """Initialize with precomputed parameters."""
-        self.qr_inverse = torch.inverse(torch.tensor(r, dtype=torch.float32))
-        self.ortho_coeffs = [
-            [torch.tensor(c, dtype=torch.float32) for c in layer_coeff]
-            for layer_coeff in ortho
-        ]
-        self.norm_factors = [
-            [torch.tensor(n, dtype=torch.float32) for n in layer_norms]
-            for layer_norms in norms
-        ]
-        
-        # Initialize layers with pretrained weights
-        for w in weights:
-            layer = nn.Linear(w.shape[1], 1, bias=False)
-            layer.weight.data = torch.tensor(w, dtype=torch.float32)
-            self.layers.append(layer)
-            
-        basis = torch.tensor(basis_np, dtype=torch.float32)
-        self.coeff = (basis.T @ y.to(self.device)).detach()
-
-    def _build_initial_basis(self, initial_basis):
-        """Construct orthogonal basis during initialization."""
-        current_basis = initial_basis
-        for layer in self.layers:
-            # Generate new basis component
-            new_comp = F.relu(layer(current_basis))
-            
-            # Orthogonalize against existing basis
-            proj_coeff = (current_basis.T @ new_comp).flatten()
-            self.ortho_coeffs.append([proj_coeff.detach().to(self.device)])
-            new_comp -= current_basis @ proj_coeff
-            
-            # Normalize and store
-            norm = torch.norm(new_comp)
-            self.norm_factors.append([norm.detach().to(self.device)])
-            current_basis = torch.cat([current_basis, new_comp/norm], 1)
-        return current_basis
-
-    def _compute_basis(self, x):
-        """Compute orthogonal basis during forward pass."""
-        # Initial basis through QR inverse
-        ones = torch.ones((x.shape[0], 1), device=self.device)
-        design = torch.cat([ones, x], 1)
-        basis = design @ self.qr_inverse
-
-        for idx, layer in enumerate(self.layers):
-            # Generate new component
-            new_comp = F.relu(layer(basis))
-            
-            # Apply orthogonalization and normalization
-            proj_coeff = self.ortho_coeffs[idx][0].to(self.device)
-            norm = self.norm_factors[idx][0].to(self.device)
-            new_comp -= (basis @ proj_coeff).unsqueeze(-1)
-            basis = torch.cat([basis, new_comp/norm], 1)
-            
-        return basis
-
-def init_weights(module):
-    """Xavier initialization for linear layers."""
-    if isinstance(module, nn.Linear):
-        torch.nn.init.xavier_uniform_(module.weight)
-
-def train_random_model(xs, func, num_basis, epochs, device='cpu'):
-    """Train multiple models with random initializations.
-    
     Returns:
-        list: Relative errors from multiple training runs
+        float: Objective value to minimize.
     """
-    targets = func(xs).flatten()
-    xs_tensor = torch.tensor(xs, dtype=torch.float32, device=device)
-    targets_tensor = torch.tensor(targets, dtype=torch.float32, device=device)
-    
-    errors = []
-    for _ in tqdm(range(20), desc="Training iterations"):
-        model = AxonNetwork(
-            xs_tensor.cpu(), targets_tensor.cpu(),
-            num_basis=num_basis + xs.shape[1] + 1,
-            device=device
-        ).to(device)
-        model.apply(init_weights)
-        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    if np.dot(w, w) < 1e-7:
+        return 100  # Penalize small weights to avoid instability
+    new_basis = nonlinearity(x @ w)
+    numerator = -(new_basis @ residuals) ** 2
+    denominator = w.T @ x.T @ x @ w
+    regularization = 1e-8 * (np.dot(w, w) - 1) ** 2
+    return numerator / denominator + regularization
 
-        for _ in range(epochs):
-            pred = model(xs_tensor)
-            loss = F.mse_loss(pred, targets_tensor)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
 
-        with torch.no_grad():
-            final_pred = model(xs_tensor)
-            err = torch.norm(final_pred - targets_tensor) / torch.norm(targets_tensor)
-            errors.append(err.item())
-            
-    return errors
+def modified_objective_function(w, x, residuals, nonlinearity):
+    """
+    Modified objective function for the Axon algorithm with orthogonalization.
+
+    Args:
+        w: Weight vector.
+        x: Input data matrix.
+        residuals: Residuals from the current approximation.
+        nonlinearity: Activation function to apply.
+
+    Returns:
+        float: Objective value to minimize.
+    """
+    new_basis = nonlinearity(x @ w)
+    # Orthogonalize against existing basis
+    new_basis = new_basis - x @ (x.T @ new_basis)
+    if np.dot(new_basis.flatten(), new_basis.flatten()) < 1e-7:
+        return 100  # Penalize small basis vectors
+    numerator = -(new_basis.flatten() @ residuals.flatten()) ** 2
+    denominator = new_basis.flatten() @ new_basis.flatten()
+    regularization = 1e-8 * (np.dot(new_basis.flatten(), new_basis.flatten()) - 1) ** 2
+    return numerator / denominator + regularization
+
+
+class AxonModel:
+    """
+    Axon model for function approximation using orthogonal basis functions.
+
+    Attributes:
+        input_dim (int): Input dimension.
+        output_dim (int): Output dimension.
+        nonlinearity (callable): Activation function.
+        basis_coefficients (list): Coefficients for constructing basis functions.
+        orthogonal_coefficients (list): Coefficients for orthogonalization.
+        orthogonal_norms (list): Norms for normalization.
+        qr_inverse (np.ndarray): Inverse of R from QR decomposition of [1, x].
+    """
+
+    def __init__(self, input_dim=1, output_dim=1, nonlinearity=relu):
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.nonlinearity = nonlinearity
+        self.basis_coefficients = None
+        self.orthogonal_coefficients = None
+        self.orthogonal_norms = None
+        self.qr_inverse = None
+        self.output_coefficients = None
+        self.basis_matrix = None
+
+    def train(self, xs, ys, num_basis, get_optimizer=None, use_modified_objective=True):
+        """
+        Train the Axon model.
+
+        Args:
+            xs: Input data (numpy array).
+            ys: Target values (numpy array).
+            num_basis: Number of basis functions to construct.
+            get_optimizer: Function to create an optimizer for a given number of variables.
+            use_modified_objective: Whether to use the modified objective function.
+
+        Returns:
+            list: Relative errors after adding each basis function.
+        """
+        num_samples = xs.shape[0]
+        design_matrix = np.hstack([np.ones((num_samples, 1)), xs])
+        q, r = np.linalg.qr(design_matrix)
+        self.qr_inverse = np.linalg.inv(r)
+
+        self.basis_coefficients = []
+        self.orthogonal_coefficients = []
+        self.orthogonal_norms = []
+        errors = []
+
+        residuals = ys - q @ q.T @ ys
+        objective = modified_objective_function if use_modified_objective else objective_function
+
+        for _ in range(num_basis):
+            # Solve optimization problem
+            if get_optimizer is None:
+                optimizer = ng.optimizers.OnePlusOne(parametrization=q.shape[1], budget=1200)
+            else:
+                optimizer = get_optimizer(q.shape[1])
+
+            result = optimizer.minimize(lambda w: objective(w, q, residuals, self.nonlinearity))
+            weights = result.args[0]
+            weights /= np.linalg.norm(weights)
+
+            # Construct new basis function
+            new_basis = self.nonlinearity(q @ weights)
+
+            # Orthogonalize and normalize
+            orthogonal_coeffs = []
+            norms = [np.linalg.norm(new_basis)]
+            new_basis /= norms[0]
+
+            for _ in range(2):  # Re-orthogonalization
+                orthogonal_coeffs.append(q.T @ new_basis)
+                new_basis -= q @ orthogonal_coeffs[-1]
+                norms.append(np.linalg.norm(new_basis))
+                new_basis /= norms[-1]
+
+            # Store coefficients and norms
+            self.orthogonal_norms.append(norms)
+            self.orthogonal_coefficients.append(orthogonal_coeffs)
+            self.basis_coefficients.append(weights)
+
+            # Update basis matrix and residuals
+            q = np.hstack([q, new_basis.reshape(-1, 1)])
+            residuals = ys - q @ q.T @ ys
+            errors.append(np.linalg.norm(residuals) / np.linalg.norm(ys))
+
+        self.output_coefficients = q.T @ ys
+        self.basis_matrix = q
+        return errors
+
+    def predict(self, xs):
+        """
+        Predict using the trained Axon model.
+
+        Args:
+            xs: Input data (numpy array).
+
+        Returns:
+            np.ndarray: Predicted values.
+        """
+        if None in [self.basis_coefficients, self.qr_inverse, self.orthogonal_coefficients, self.orthogonal_norms]:
+            raise ValueError("Model is not trained.")
+
+        design_matrix = np.hstack([np.ones((xs.shape[0], 1)), xs])
+        basis = design_matrix @ self.qr_inverse
+
+        for i, weights in enumerate(self.basis_coefficients):
+            new_basis = self.nonlinearity(basis @ weights)
+            new_basis /= self.orthogonal_norms[i][0]
+
+            for coeff, norm in zip(self.orthogonal_coefficients[i], self.orthogonal_norms[i][1:]):
+                new_basis -= basis @ coeff
+                new_basis /= norm
+
+            basis = np.hstack([basis, new_basis.reshape(-1, 1)])
+
+        return basis @ self.output_coefficients
+
+
+def axon_algorithm(xs, ys, num_basis, get_optimizer=None, use_modified_objective=True, nonlinearity=relu):
+    """
+    Greedy algorithm for function approximation using the Axon method.
+
+    Args:
+        xs: Input data (numpy array).
+        ys: Target values (numpy array).
+        num_basis: Number of basis functions to compute.
+        get_optimizer: Function to create an optimizer for a given number of variables.
+        use_modified_objective: Whether to use the modified objective function.
+        nonlinearity: Activation function to use.
+
+    Returns:
+        tuple: Basis matrix, basis coefficients, QR inverse, orthogonal coefficients, orthogonal norms, and errors.
+    """
+    model = AxonModel(xs.shape[1], ys.shape[1], nonlinearity)
+    errors = model.train(xs, ys, num_basis, get_optimizer, use_modified_objective)
+    return (
+        model.basis_matrix,
+        model.basis_coefficients,
+        model.qr_inverse,
+        model.orthogonal_coefficients,
+        model.orthogonal_norms,
+        errors,
+    )
