@@ -27,6 +27,7 @@ if __name__ == "__main__":
     # Run Axon algorithm to approximate the function
     basis_matrix, basis_coefs, qr_inverse, ortho_coefs, ortho_norms, errors = axon_algorithm(
         xs, ys, num_basis=10, get_optimizer=lambda n: get_opt_oneplus_one(n, budget=1200)
+	)
     
     # Initialize and evaluate the PyTorch Axon model
     model = AxonNetwork(
