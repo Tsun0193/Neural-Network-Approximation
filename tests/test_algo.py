@@ -1,9 +1,9 @@
-# Auto-generated tests for /mnt/data/algo.py
-import pytest
-import utils.algo
+from utils.algo import optimal_approx
 
-def test_func_optimal_approx_callable():
-    assert callable(getattr(utils.algo, 'optimal_approx', None))
-
-def test_func_compute_segment_error_callable():
-    assert callable(getattr(utils.algo, 'compute_segment_error', None))
+def test_optimal_approx_structure():
+    f = lambda x: x ** 2
+    intervals, errors, rounds = optimal_approx(n=3, f=f, a=0, b=1)
+    assert isinstance(intervals, list)
+    assert isinstance(errors, list)
+    assert isinstance(rounds, int)
+    assert len(intervals) == len(errors)
