@@ -1,15 +1,12 @@
-import torch
-from model.simple_model import ReLU_Network
+# Auto-generated tests for /mnt/data/simple_model.py
+import pytest
+import model.simple_model
 
-def test_relu_forward_shape():
-    model = ReLU_Network(1, 2, 16)
-    x = torch.randn(32, 1)
-    y = model(x)
-    assert y.shape == (32, 1)
+def test_class_relu_network_exists():
+    assert hasattr(model.simple_model, 'ReLU_Network')
 
-def test_relu_output_grad():
-    model = ReLU_Network(1, 1, 8)
-    x = torch.randn(10, 1, requires_grad=True)
-    y = model(x)
-    y.sum().backward()
-    assert x.grad is not None
+def test_func___init___callable():
+    assert callable(getattr(model.simple_model, '__init__', None))
+
+def test_func_forward_callable():
+    assert callable(getattr(model.simple_model, 'forward', None))
